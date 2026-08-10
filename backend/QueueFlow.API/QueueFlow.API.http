@@ -1,0 +1,6 @@
+@QueueFlow.API_HostAddress = http://localhost:5110
+
+GET {{QueueFlow.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
