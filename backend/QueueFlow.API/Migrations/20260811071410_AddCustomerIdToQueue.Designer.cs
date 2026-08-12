@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using QueueFlow.API.Data;
 
@@ -11,9 +12,11 @@ using QueueFlow.API.Data;
 namespace QueueFlow.API.Migrations
 {
     [DbContext(typeof(QueueDbContext))]
-    partial class QueueDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260811071410_AddCustomerIdToQueue")]
+    partial class AddCustomerIdToQueue
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -11,4 +11,7 @@ public class QueueItem
     public string Status { get; set; } = "Waiting";
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Customer who created this queue token
+    public int CustomerId { get; set; }
 }

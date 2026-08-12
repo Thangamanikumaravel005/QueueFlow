@@ -1,21 +1,19 @@
-import { useState } from "react";
-import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+
+interface User {
+  id?: number;
+  name?: string;
+  email?: string;
+  role: string;
+}
 
 interface LoginResponse {
   message: string;
   token: string;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    role: string;
-  };
 }
 
-const API_URL = "http://localhost:5110/api/Auth";
-
-function Login() {
+export default function Login() {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -31,220 +29,567 @@ function Login() {
 
     setError("");
 
-    if (!email.trim() || !password.trim()) {
-      setError("Please enter email and password.");
+    // -------------------------------------------------------
+    // VALIDATION
+    // -------------------------------------------------------
+
+    if (!email.trim()) {
+      setError("Please enter your email.");
+      return;
+    }
+
+    if (!password) {
+      setError("Please enter your password.");
       return;
     }
 
     try {
       setLoading(true);
 
+      // -----------------------------------------------------
+      // LOGIN API
+      // -----------------------------------------------------
+
       const response = await fetch(
-        `${API_URL}/login`,
+        "http://localhost:5110/api/Auth/login",
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email: email.trim(),
-            password,
+            password: password,
           }),
         }
       );
 
-      const responseText = await response.text();
+      // -----------------------------------------------------
+      // READ RESPONSE
+      // -----------------------------------------------------
 
-      let data: LoginResponse | { message?: string };
+      const contentType =
+        response.headers.get("content-type") || "";
 
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        data = {
-          message: responseText,
-        };
-      }
+      let data:
+        | LoginResponse
+        | { message?: string };
 
-      if (!response.ok) {
+      if (
+        contentType.includes(
+          "application/json"
+        )
+      ) {
+        data = await response.json();
+      } else {
+        const text =
+          await response.text();
+
+        console.error(
+          "Backend returned non-JSON response:",
+          text
+        );
+
         throw new Error(
-          data.message ||
-            "Invalid email or password."
+          `Server returned HTTP ${response.status}. Please check the backend.`
         );
       }
 
-      const loginData = data as LoginResponse;
+      // -----------------------------------------------------
+      // CHECK HTTP STATUS
+      // -----------------------------------------------------
+
+      if (!response.ok) {
+        throw new Error(
+          "message" in data &&
+          data.message
+            ? data.message
+            : "Invalid email or password."
+        );
+      }
+
+      // -----------------------------------------------------
+      // CHECK TOKEN
+      // -----------------------------------------------------
+
+      if (
+        !("token" in data) ||
+        !data.token
+      ) {
+        throw new Error(
+          "Login succeeded but authentication token was not received."
+        );
+      }
+
+      const token = data.token;
+
+      // -----------------------------------------------------
+      // VALIDATE JWT
+      // -----------------------------------------------------
+
+      const tokenParts =
+        token.split(".");
+
+      if (tokenParts.length !== 3) {
+        throw new Error(
+          "Invalid authentication token."
+        );
+      }
+
+      // -----------------------------------------------------
+      // DECODE JWT PAYLOAD
+      // -----------------------------------------------------
+
+      let payload: Record<
+        string,
+        any
+      >;
+
+      try {
+        payload = JSON.parse(
+          atob(
+            tokenParts[1]
+              .replace(/-/g, "+")
+              .replace(/_/g, "/")
+          )
+        );
+      } catch (decodeError) {
+        console.error(
+          "JWT decode error:",
+          decodeError
+        );
+
+        throw new Error(
+          "Unable to read authentication token."
+        );
+      }
+
+      console.log(
+        "JWT payload:",
+        payload
+      );
+
+      // -----------------------------------------------------
+      // GET USER ID
+      // -----------------------------------------------------
+
+      const userId =
+        payload.sub ||
+        payload[
+          "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+        ];
+
+      // -----------------------------------------------------
+      // GET USER NAME
+      // -----------------------------------------------------
+
+      const userName =
+        payload.name ||
+        payload[
+          "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+        ] ||
+        "";
+
+      // -----------------------------------------------------
+      // GET USER EMAIL
+      // -----------------------------------------------------
+
+      const userEmail =
+        payload.email ||
+        payload[
+          "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+        ] ||
+        email.trim();
+
+      // -----------------------------------------------------
+      // GET USER ROLE
+      // -----------------------------------------------------
+
+      const role =
+        payload.role ||
+        payload[
+          "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+        ];
+
+      console.log(
+        "Detected role:",
+        role
+      );
+
+      // -----------------------------------------------------
+      // ROLE VALIDATION
+      // -----------------------------------------------------
+
+      if (!role) {
+        throw new Error(
+          "User role was not found in the authentication token."
+        );
+      }
+
+      const normalizedRole =
+        String(role)
+          .trim()
+          .toLowerCase();
+
+      // -----------------------------------------------------
+      // CHECK VALID ROLES
+      // -----------------------------------------------------
+
+      if (
+        normalizedRole !== "admin" &&
+        normalizedRole !== "staff" &&
+        normalizedRole !== "customer"
+      ) {
+        throw new Error(
+          `Unknown user role: ${role}`
+        );
+      }
+
+      // -----------------------------------------------------
+      // CREATE USER OBJECT
+      // -----------------------------------------------------
+
+      const user: User = {
+        id: userId
+          ? Number(userId)
+          : undefined,
+
+        name: userName,
+
+        email: userEmail,
+
+        role:
+          normalizedRole
+            .charAt(0)
+            .toUpperCase() +
+          normalizedRole.slice(1),
+      };
+
+      console.log(
+        "Authenticated user:",
+        user
+      );
+
+      // -----------------------------------------------------
+      // SAVE AUTHENTICATION DATA
+      // -----------------------------------------------------
 
       sessionStorage.setItem(
-  "token",
-  loginData.token
-);
+        "token",
+        token
+      );
 
-sessionStorage.setItem(
-  "user",
-  JSON.stringify(loginData.user)
-);
+      sessionStorage.setItem(
+        "user",
+        JSON.stringify(user)
+      );
 
-sessionStorage.setItem(
-  "role",
-  loginData.user.role
-);
+      sessionStorage.setItem(
+        "role",
+        user.role
+      );
 
-      // Redirect according to role
-      switch (
-        loginData.user.role.toLowerCase()
+      // -----------------------------------------------------
+      // REDIRECT BY ROLE
+      // -----------------------------------------------------
+
+      if (
+        normalizedRole === "admin"
       ) {
-        case "customer":
-          navigate("/customer");
-          break;
+        navigate("/admin", {
+          replace: true,
+        });
 
-        case "staff":
-          navigate("/staff");
-          break;
-
-        case "admin":
-          navigate("/admin");
-          break;
-
-        default:
-          setError(
-            "Your account does not have a valid role."
-          );
+        return;
       }
-    } catch (err) {
-      console.error("Login error:", err);
+
+      if (
+        normalizedRole === "staff"
+      ) {
+        navigate("/staff", {
+          replace: true,
+        });
+
+        return;
+      }
+
+      if (
+        normalizedRole === "customer"
+      ) {
+        navigate("/customer", {
+          replace: true,
+        });
+
+        return;
+      }
+
+    } catch (error) {
+      console.error(
+        "Login error:",
+        error
+      );
+
+      // Remove partially saved authentication data
+      sessionStorage.removeItem(
+        "token"
+      );
+
+      sessionStorage.removeItem(
+        "user"
+      );
+
+      sessionStorage.removeItem(
+        "role"
+      );
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to login."
+        error instanceof Error
+          ? error.message
+          : "Unable to login. Please try again."
       );
+
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f4f6f9",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "20px",
+        fontFamily:
+          "Arial, sans-serif",
+      }}
+    >
 
-      <div className="w-full max-w-md">
+      {/* ===================================================
+          LOGIN CARD
+      =================================================== */}
 
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "430px",
+          backgroundColor: "#ffffff",
+          padding: "40px",
+          borderRadius: "16px",
+          boxShadow:
+            "0 10px 30px rgba(0,0,0,0.10)",
+          boxSizing: "border-box",
+        }}
+      >
 
-          {/* Header */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
-          <div className="text-center mb-8">
+        <div
+          style={{
+            textAlign: "center",
+            marginBottom: "30px",
+          }}
+        >
 
-            <h1 className="text-3xl font-bold text-blue-600">
-              QueueFlow
-            </h1>
+          <Link
+            to="/"
+            style={{
+              color: "#2563eb",
+              textDecoration: "none",
+              fontSize: "32px",
+              fontWeight: "700",
+            }}
+          >
+            QueueFlow
+          </Link>
 
-            <h2 className="text-2xl font-bold text-gray-800 mt-4">
-              Login
-            </h2>
+          <h2
+            style={{
+              marginTop: "14px",
+              marginBottom: "8px",
+              color: "#1e293b",
+            }}
+          >
+            Login
+          </h2>
 
-            <p className="text-gray-500 mt-2">
-              Sign in to your QueueFlow account.
-            </p>
+          <p
+            style={{
+              color: "#64748b",
+              margin: 0,
+            }}
+          >
+            Login to your QueueFlow account
+          </p>
 
-          </div>
+        </div>
 
 
-          {/* Error */}
+        {/* =================================================
+            LOGIN FORM
+        ================================================= */}
+
+        <form
+          onSubmit={handleLogin}
+        >
+
+          {/* EMAIL */}
+
+          <label
+            htmlFor="email"
+            style={{
+              display: "block",
+              marginBottom: "8px",
+              fontWeight: "600",
+              color: "#334155",
+            }}
+          >
+            Email
+          </label>
+
+          <input
+            id="email"
+            type="email"
+            placeholder="Enter email"
+            value={email}
+            onChange={(event) =>
+              setEmail(
+                event.target.value
+              )
+            }
+            disabled={loading}
+            autoComplete="email"
+            style={{
+              width: "100%",
+              padding: "13px",
+              marginBottom: "20px",
+              border:
+                "1px solid #cbd5e1",
+              borderRadius: "8px",
+              fontSize: "16px",
+              boxSizing: "border-box",
+              outline: "none",
+            }}
+          />
+
+
+          {/* PASSWORD */}
+
+          <label
+            htmlFor="password"
+            style={{
+              display: "block",
+              marginBottom: "8px",
+              fontWeight: "600",
+              color: "#334155",
+            }}
+          >
+            Password
+          </label>
+
+          <input
+            id="password"
+            type="password"
+            placeholder="Enter password"
+            value={password}
+            onChange={(event) =>
+              setPassword(
+                event.target.value
+              )
+            }
+            disabled={loading}
+            autoComplete="current-password"
+            style={{
+              width: "100%",
+              padding: "13px",
+              marginBottom: "20px",
+              border:
+                "1px solid #cbd5e1",
+              borderRadius: "8px",
+              fontSize: "16px",
+              boxSizing: "border-box",
+              outline: "none",
+            }}
+          />
+
+
+          {/* ERROR */}
 
           {error && (
-            <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {error}
+            <div
+              style={{
+                backgroundColor:
+                  "#fee2e2",
+                color: "#b91c1c",
+                padding: "12px",
+                borderRadius: "8px",
+                marginBottom: "20px",
+                fontSize: "14px",
+                lineHeight: "1.5",
+              }}
+            >
+              ⚠️ {error}
             </div>
           )}
 
 
-          {/* Login Form */}
+          {/* LOGIN BUTTON */}
 
-          <form
-            onSubmit={handleLogin}
-            className="space-y-5"
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: "14px",
+              border: "none",
+              borderRadius: "8px",
+              backgroundColor:
+                loading
+                  ? "#94a3b8"
+                  : "#2563eb",
+              color: "#ffffff",
+              fontSize: "17px",
+              fontWeight: "600",
+              cursor:
+                loading
+                  ? "not-allowed"
+                  : "pointer",
+            }}
           >
+            {loading
+              ? "Logging in..."
+              : "Login"}
+          </button>
 
-            {/* Email */}
-
-            <div>
-
-              <label
-                htmlFor="email"
-                className="block mb-2 font-semibold text-gray-700"
-              >
-                Email
-              </label>
-
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
-                placeholder="Enter your email"
-                autoComplete="email"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              />
-
-            </div>
+        </form>
 
 
-            {/* Password */}
+        {/* =================================================
+            BACK TO HOME
+        ================================================= */}
 
-            <div>
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: "25px",
+          }}
+        >
 
-              <label
-                htmlFor="password"
-                className="block mb-2 font-semibold text-gray-700"
-              >
-                Password
-              </label>
-
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-                placeholder="Enter your password"
-                autoComplete="current-password"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              />
-
-            </div>
-
-
-            {/* Submit */}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-blue-600 px-5 py-3 font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-            >
-              {loading
-                ? "Signing in..."
-                : "Login"}
-            </button>
-
-          </form>
-
-
-          {/* Back Home */}
-
-          <div className="text-center mt-6">
-
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="text-blue-600 hover:text-blue-800"
-            >
-              ← Back to Home
-            </button>
-
-          </div>
+          <Link
+            to="/"
+            style={{
+              color: "#2563eb",
+              textDecoration: "none",
+            }}
+          >
+            ← Back to Home
+          </Link>
 
         </div>
 
@@ -253,5 +598,3 @@ sessionStorage.setItem(
     </div>
   );
 }
-
-export default Login;

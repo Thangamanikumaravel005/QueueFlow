@@ -62,7 +62,15 @@ builder.Services
 
                 ValidateLifetime = true,
 
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.Zero,
+
+                // IMPORTANT:
+                // Tell ASP.NET which JWT claim represents the user's role.
+                RoleClaimType =
+                    System.Security.Claims.ClaimTypes.Role,
+
+                NameClaimType =
+                    System.Security.Claims.ClaimTypes.Name
             };
     });
 
@@ -97,7 +105,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // --------------------------------------------------
-// Middleware
+// Swagger
 // --------------------------------------------------
 
 if (app.Environment.IsDevelopment())
@@ -105,6 +113,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// --------------------------------------------------
+// Middleware
+// --------------------------------------------------
 
 app.UseCors("AllowReact");
 
